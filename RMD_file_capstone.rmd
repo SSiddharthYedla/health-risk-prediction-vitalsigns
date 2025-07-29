@@ -1,0 +1,504 @@
+---
+title: "Capstone Project - Vitals"
+author: "AJAY KATTA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+
+data <- read.csv("C:/Users/katta/Desktop/Financial Analytics/human_vital_signs_dataset_2024_modified.csv")
+head(data)
+colSums(is.na(data))
+```
+```{r}
+num_cols <- sapply(data, is.numeric)
+data[num_cols] <- lapply(data[num_cols], function(x) ifelse(is.na(x), median(x, na.rm = TRUE), x))
+
+get_mode <- function(v) {
+  uniqv <- na.omit(unique(v))
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+cat_cols <- sapply(data, is.factor)
+data[cat_cols] <- lapply(data[cat_cols], function(x) ifelse(is.na(x), get_mode(x), x))
+```
+```{r}
+cap_outliers <- function(x) {
+  z_scores <- scale(x)
+  x[z_scores > 3] <- quantile(x, 0.99, na.rm = TRUE)
+  x[z_scores < -3] <- quantile(x, 0.01, na.rm = TRUE)
+  return(x)
+}
+
+data[num_cols] <- lapply(data[num_cols], cap_outliers)
+
+summary(data[num_cols])
+
+names(data)
+```
+
+```{r}
+#EDA
+library(ggplot2)
+library(dplyr)
+
+numeric_cols <- names(data)[sapply(data, is.numeric)]
+
+# Plot histograms for all numeric variables
+for (col in numeric_cols) {
+  print(
+    ggplot(data, aes_string(x = col)) +
+      geom_histogram(fill = "skyblue", color = "black", bins = 30) +
+      labs(title = paste("Distribution of", col), x = col, y = "Count")
+  )
+}
+# Example: Reclassify or create a new Risk Category
+library(dplyr)
+
+data <- data %>%
+  mutate(Risk_Category = case_when(
+    Derived_BMI <= 18.5 ~ "Low Risk",
+    Derived_BMI > 18.5 & Derived_BMI <= 25 ~ "Medium Risk",
+    Derived_BMI > 25 & Derived_BMI <= 30 ~ "High Risk",
+    Derived_BMI > 30 ~ "Extreme Risk"
+  ))
+
+
+ggplot(data, aes(x = Derived_BMI, y = Heart_Rate, color = Risk_Category)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~ Risk_Category, ncol = 2) +
+  labs(title = "BMI vs Heart Rate by Risk Category", x = "BMI", y = "Heart Rate") +
+  theme_light() +
+  scale_color_manual(values = c(
+    "Low Risk" = "green",
+    "Medium Risk" = "gold",
+    "High Risk" = "orange",
+    "Extreme Risk" = "red"
+  ))
+
+
+# Ensure Risk_Category has the correct order
+data$Risk_Category <- factor(data$Risk_Category, 
+                              levels = c("Low Risk", "Medium Risk", "High Risk", "Extreme Risk"))
+
+# Create the bar plot
+ggplot(data, aes(x = Risk_Category, fill = Risk_Category)) +
+  geom_bar() +
+  labs(title = "Count of Risk Categories", 
+       x = "Risk Category", 
+       y = "Count") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Low Risk" = "green", 
+                               "Medium Risk" = "yellow", 
+                               "High Risk" = "orange", 
+                               "Extreme Risk" = "red"))
+
+
+library(corrplot)
+
+num_data <- data[, sapply(data, is.numeric)]
+cor_matrix <- cor(num_data, use = "complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "upper", 
+         addCoef.col = "black", number.cex = 0.7,
+         tl.cex = 0.8, title = "Correlation Matrix", mar = c(0,0,1,0))
+data <- data %>%
+  mutate(Risk_Category = case_when(
+    Derived_BMI <= 18.5 ~ "Low Risk",
+    Derived_BMI > 18.5 & Derived_BMI <= 25 ~ "Medium Risk",
+    Derived_BMI > 25 & Derived_BMI <= 30 ~ "High Risk",
+    Derived_BMI > 30 ~ "Extreme Risk"
+  ))
+
+# Plot the density
+ggplot(data, aes(x = Heart_Rate, fill = Risk_Category)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Heart Rate Distribution by Risk Category", x = "Heart Rate", y = "Density") +
+  scale_fill_manual(values = c("Low Risk" = "green", "Medium Risk" = "skyblue", "High Risk" = "orange", "Extreme Risk" = "red"))
+ggplot(data, aes(x = Derived_BMI, y = Heart_Rate, color = Risk_Category)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "BMI vs Heart Rate Colored by Risk", x = "BMI", y = "Heart Rate") +
+  theme_light()
+
+data$BMI_Group <- cut(data$Derived_BMI, breaks = 5)
+
+ggplot(data, aes(x = Heart_Rate, fill = Risk_Category)) +
+  geom_boxplot(alpha = 0.7, outlier.color = "red", outlier.shape = 1) +
+  facet_wrap(~ Risk_Category) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+library(corrplot)
+
+num_cols <- sapply(data, is.numeric)
+cor_matrix <- cor(data[, num_cols], use = "complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8)
+
+
+```
+
+
+```{r}
+
+# Loading required libraries
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(randomForest)
+
+# Loading the dataset
+data <- read.csv("C:/Users/katta/Desktop/Financial Analytics/human_vital_signs_dataset_2024_modified.csv")
+
+# Filtering only rows where Heart_Rate is not NA
+data_clean <- data %>%
+  filter(!is.na(Heart_Rate))
+
+names(data_clean)
+str(data_clean)
+
+```
+
+```{r}
+# Load required libraries
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(randomForest)
+
+# Filter out rows where Heart_Rate is NA
+data_clean <- data %>%
+  filter(!is.na(Heart_Rate))
+
+# Remove outliers in Heart_Rate
+Q1 <- quantile(data_clean$Heart_Rate, 0.25)
+Q3 <- quantile(data_clean$Heart_Rate, 0.75)
+IQR <- Q3 - Q1
+data_clean <- data_clean %>%
+  filter(Heart_Rate >= (Q1 - 1.5 * IQR) & Heart_Rate <= (Q3 + 1.5 * IQR))
+
+# Categorize Heart_Rate into Low, Normal, High using quantiles
+data_clean$HR_Category <- cut(
+  data_clean$Heart_Rate,
+  breaks = quantile(data_clean$Heart_Rate, probs = c(0, 0.33, 0.66, 1), na.rm = TRUE),
+  labels = c("Low", "Normal", "High"),
+  include.lowest = TRUE
+)
+
+# Partitioning the data using HR_Category
+set.seed(123)
+train_index <- createDataPartition(data_clean$HR_Category, p = 0.7, list = FALSE)
+train_data <- data_clean[train_index, ]
+test_data <- data_clean[-train_index, ]
+
+# Optional: Correlation plot for numeric features
+numeric_vars <- select_if(train_data, is.numeric)
+cor_matrix <- cor(numeric_vars)
+corrplot(cor_matrix, method = "circle")
+
+# Fit random forest classification model (drop original Heart_Rate to avoid leakage)
+rf_model <- randomForest(HR_Category ~ . -Heart_Rate, data = train_data, ntree = 100)
+
+# Predict on test set
+rf_pred <- predict(rf_model, newdata = test_data)
+
+# Evaluate performance
+conf_matrix <- confusionMatrix(rf_pred, test_data$HR_Category)
+print(conf_matrix)
+```
+
+```{r}
+#XGBoost
+
+library(caret)
+library(xgboost)
+library(dplyr)
+
+# Load and clean data
+data <- read.csv("C:/Users/katta/Desktop/Financial Analytics/human_vital_signs_dataset_2024_modified.csv")
+
+# Binary encode target
+data$Risk_Binary <- ifelse(data$Risk_Category == "High Risk", 1, 0)
+
+# Split with class balance
+set.seed(123)
+class0 <- data[data$Risk_Binary == 0, ]
+class1 <- data[data$Risk_Binary == 1, ]
+
+train0 <- class0[sample(nrow(class0), 0.7 * nrow(class0)), ]
+train1 <- class1[sample(nrow(class1), 0.7 * nrow(class1)), ]
+train_data <- rbind(train0, train1)
+test_data <- rbind(setdiff(class0, train0), setdiff(class1, train1))
+
+# Drop non-numeric or identifier columns (like Risk_Category)
+train_data <- train_data %>% select(-Risk_Category)
+test_data <- test_data %>% select(-Risk_Category)
+
+# Logistic regression with correct variable
+log_model <- glm(Risk_Binary ~ ., data = train_data, family = "binomial")
+log_probs <- predict(log_model, newdata = test_data, type = "response")
+pred_labels <- ifelse(log_probs > 0.5, 1, 0)
+
+# Evaluate
+actual <- factor(test_data$Risk_Binary, levels = c(0, 1))
+pred_labels <- factor(pred_labels, levels = c(0, 1))
+conf_matrix <- confusionMatrix(pred_labels, actual)
+print(conf_matrix)
+```
+
+```{r}
+# K-MEANS CLUSTERING
+
+
+library(factoextra)
+
+# Selecting relevant numeric features and scaling them
+clust_data <- na.omit(scale(data[, c("Heart_Rate", "Oxygen_Saturation", "Body_Temperature", "Age")]))
+
+# Applying K-Means with 4 clusters
+set.seed(123)
+kmeans_model <- kmeans(clust_data, centers = 4)
+
+# Assigning human-readable risk labels to the clusters and Checking cluster centers to confirm if labeling order needs flipping
+named_clusters <- factor(kmeans_model$cluster,
+                         levels = c(1, 2, 3, 4),
+                         labels = c("Low Risk Patients", "Medium Risk Patients", "High Risk Patients", "Extreme or In Danger"))
+
+# Attaching the labeled cluster to your dataset
+data$KMeans_Risk <- named_clusters
+
+# Visualizing the clusters
+kmeans_plot <- fviz_cluster(list(data = clust_data, cluster = named_clusters),
+                            geom = "point",
+                            ellipse.type = "norm",
+                            palette = c("forestgreen", "skyblue", "gold", "red"),
+                            ggtheme = theme_minimal()) +
+  ggtitle("K-Means Clustering of Patient Vitals (4 Risk Categories)") +
+  xlab("Patient Condition Axis 1") +
+  ylab("Patient Condition Axis 2")
+
+# displaying the plot
+kmeans_plot
+
+
+
+#ROC Curve
+
+
+library(pROC)
+
+# Training logistic regression model
+log_model <- glm(Risk_Binary ~ ., data = train_data, family = "binomial")
+
+# Predicting probabilities on test set
+log_preds <- predict(log_model, newdata = test_data, type = "response")
+
+# Creating ROC object
+roc_curve <- roc(test_data$Risk_Binary, log_preds)
+
+# Plotting ROC curve
+plot(roc_curve, col = "darkblue", lwd = 2, main = "ROC Curve with AUC")
+abline(a = 0, b = 1, lty = 2, col = "gray")
+
+# Adding the AUC text
+auc_value <- auc(roc_curve)
+legend("bottomright", legend = paste("AUC =", round(auc_value, 4)),
+       col = "darkblue", lwd = 2, bty = "n")
+# Converting predicted probabilities to class labels (0 or 1)
+log_pred_classes <- ifelse(log_preds > 0.5, 1, 0)
+
+# Calculating accuracy
+accuracy <- mean(log_pred_classes == test_data$Risk_Binary)
+print(paste("Logistic Regression Accuracy:", round(accuracy, 4)))
+
+
+```
+
+```{r}
+# Load required libraries
+library(tidyverse)
+library(caret)
+library(randomForest)
+
+# Load the data
+#data <- read.csv("C:/Users/katta/Desktop/Financial Analytics/human_vital_signs_dataset_2024_modified.csv")
+
+# Clean data
+data_clean <- data %>%
+  filter(!is.na(Risk_Category))
+
+# Convert Risk_Category to binary (High Risk = 1, else 0)
+data_clean$Risk_Binary <- ifelse(data_clean$Risk_Category == "High Risk", 1, 0)
+data_clean$Risk_Binary <- as.factor(data_clean$Risk_Binary)
+
+# Manually split to ensure class balance
+class0 <- data_clean[data_clean$Risk_Binary == 0, ]
+class1 <- data_clean[data_clean$Risk_Binary == 1, ]
+
+set.seed(123)
+train0 <- class0[sample(nrow(class0), 0.7 * nrow(class0)), ]
+train1 <- class1[sample(nrow(class1), 0.7 * nrow(class1)), ]
+
+train_data <- rbind(train0, train1)
+test_data <- rbind(setdiff(class0, train0), setdiff(class1, train1))
+
+# Logistic regression model
+log_model <- glm(Risk_Binary ~ . -Risk_Category, data = train_data, family = "binomial")
+
+# Predictions
+log_probs <- predict(log_model, newdata = test_data, type = "response")
+log_class <- ifelse(log_probs > 0.5, 1, 0)
+
+# Evaluate
+actual <- as.numeric(as.character(test_data$Risk_Binary))
+log_class <- factor(log_class, levels = c(0, 1))
+actual <- factor(actual, levels = c(0, 1))
+
+conf_matrix <- confusionMatrix(log_class, actual, positive = "1")
+print(conf_matrix)
+
+```
+```{r}
+#Neural Network (Shallow NN)
+# Load necessary libraries
+library(nnet)
+library(caret)
+library(pROC)
+
+# Step 1: Select a smaller subset of features to avoid too many weights
+train_small <- train_data[, c("Heart_Rate", "Body_Temperature", "Age", "Derived_BMI", "Risk_Binary")]
+test_small  <- test_data[, c("Heart_Rate", "Body_Temperature", "Age", "Derived_BMI", "Risk_Binary")]
+
+# Step 2: Ensure binary outcome is a factor for classification
+train_small$Risk_Binary <- as.factor(train_small$Risk_Binary)
+test_small$Risk_Binary <- as.factor(test_small$Risk_Binary)
+
+# Step 3: Fit the shallow neural network (3 hidden neurons)
+nn_model <- nnet(Risk_Binary ~ ., data = train_small, size = 3, decay = 0.01, maxit = 200)
+
+# Step 4: Predict probabilities and classify
+nn_probs <- predict(nn_model, newdata = test_small, type = "raw")
+nn_preds <- ifelse(nn_probs > 0.5, 1, 0)
+
+# Step 5: Evaluate performance
+conf_matrix <- confusionMatrix(as.factor(nn_preds), test_small$Risk_Binary)
+print(conf_matrix)
+
+# Step 6: Plot ROC Curve with AUC
+roc_curve <- roc(as.numeric(test_small$Risk_Binary), as.numeric(nn_probs))
+plot(roc_curve, main = "Neural Network ROC Curve", col = "darkgreen", lwd = 2)
+auc_val <- auc(roc_curve)
+legend("bottomright", legend = paste("AUC =", round(auc_val, 4)), bty = "n", col = "darkgreen", lwd = 2)
+
+
+
+```
+
+
+```{r}
+
+
+#data <- read.csv("C:/Users/katta/Desktop/Financial Analytics/human_vital_signs_dataset_2024_modified.csv")
+
+# Categorizing into four risk levels based on a weighted logic
+data$Custom_Risk <- with(data, ifelse(
+  # Extreme or In Danger conditions
+  (Derived_BMI > 35 & Height_.m. < 1.55) |
+  (Heart_Rate > 120 | Heart_Rate < 50) |
+  (Oxygen_Saturation < 90) |
+  (Body_Temperature < 35 | Body_Temperature > 39.5) |
+  (Respiratory_Rate < 10 | Respiratory_Rate > 28),
+  "Extreme or In Danger",
+
+  ifelse(
+    # High Risk
+    (Derived_BMI > 30 & Height_.m. < 1.60) |
+    (Derived_BMI < 18 & Height_.m. > 1.75) |
+    (Heart_Rate > 110 | Heart_Rate < 55) |
+    (Oxygen_Saturation < 93) |
+    (Body_Temperature < 35.5 | Body_Temperature > 38.5) |
+    (Respiratory_Rate < 11 | Respiratory_Rate > 25),
+    "High Risk",
+
+    ifelse(
+      # Medium Risk
+      (Derived_BMI > 28 & Height_.m. < 1.65) |
+      (Heart_Rate > 100 | Heart_Rate < 60) |
+      (Oxygen_Saturation < 95) |
+      (Body_Temperature < 36 | Body_Temperature > 38) |
+      (Respiratory_Rate < 12 | Respiratory_Rate > 22),
+      "Medium Risk",
+
+      # Else, Low Risk
+      "Low Risk"
+    )
+  )
+))
+
+# Checking the distribution
+table(data$Custom_Risk)
+
+# Plotting comparison with original risk category
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Reshape data: make 'Risk_Category' and 'Custom_Risk' into two groups
+data_long <- data %>%
+  select(Risk_Category, Custom_Risk) %>%
+  pivot_longer(cols = c(Risk_Category, Custom_Risk),
+               names_to = "Risk_Type",
+               values_to = "Risk_Level")
+
+# Adjust the Risk_Type for better labels
+data_long$Risk_Type <- recode(data_long$Risk_Type,
+                              "Risk_Category" = "Original Risk",
+                              "Custom_Risk" = "Predicted Risk")
+
+# Plot
+# Define custom colors BEFORE ggplot
+custom_colors <- c(
+  "Extreme or In Danger" = "darkred",
+  "High Risk" = "orange",
+  "Medium Risk" = "skyblue4",
+  "Low Risk" = "forestgreen"
+)
+
+# Now plot
+ggplot(data_long, aes(x = Risk_Type, fill = Risk_Level)) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = custom_colors) +
+  labs(title = "Original Risk vs BMI-Integrated Risk (BIR)",
+       x = NULL,
+       y = "Count",
+       fill = "Risk Level") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.title = element_text(size = 12),
+    axis.text.x = element_text(face = "bold", size = 12),
+    legend.title = element_text(face = "bold")
+  )
+
+# Count for Original Risk
+original_counts <- data %>%
+  group_by(Risk_Category) %>%
+  summarise(Count = n()) %>%
+  arrange(desc(Count))
+
+print("Original Risk Category Counts:")
+print(original_counts)
+
+# Count for Predicted (Custom) Risk
+predicted_counts <- data %>%
+  group_by(Custom_Risk) %>%
+  summarise(Count = n()) %>%
+  arrange(desc(Count))
+
+print("Predicted Risk Category Counts:")
+print(predicted_counts) 
+```
