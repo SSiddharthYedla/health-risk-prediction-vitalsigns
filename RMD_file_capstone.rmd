@@ -1,6 +1,6 @@
 ---
 title: "Capstone Project - Vitals"
-author: "AJAY KATTA"
+author: "Shiva Siddharth Yedla"
 date: "`r Sys.Date()`"
 output: html_document
 ---
